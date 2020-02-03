@@ -2,91 +2,51 @@ package main
 
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/printer"
-	"go/token"
-	"io"
 	"log"
 	"os"
 	"os/exec"
 )
 
-const testFile = "test/main.go"
-
-var backupFile = fmt.Sprintf("%v.backup", testFile)
-
-var testMutations = []Mutation{
-	Mutation{token.ADD, token.SUB},
-	Mutation{token.SUB, token.ADD},
-}
-
-type Mutation struct {
-	token         token.Token
-	mutationToken token.Token
-}
-
 func main() {
-	err := os.Rename(testFile, backupFile)
-	if err != nil {
-		log.Fatal(err)
-	}
+	filesInfo := findSrcFilesInPackage(".")
 
-	defer func() {
-		_ = os.Rename(backupFile, testFile)
-	}()
+	mutations := allMutations
 
-	fset := token.NewFileSet()
-	astFile, err := parser.ParseFile(fset, testFile, nil, 0600)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	srcFile, err := os.Create(testFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	io.Copy(backupFile, srcFile)
-
-	for _, mutation := range testMutations {
-		ast.Inspect(astFile, func(x ast.Node) bool {
-			s, ok := x.(*ast.BinaryExpr)
-			if !ok {
-				return true
-			}
-
-			if s.Op == mutation.token {
-				s.Op = mutation.mutationToken
-			}
-			return false
-		})
-
-		if err := printer.Fprint(srcFile, fset, astFile); err != nil {
-			log.Fatal(err)
-		}
-
-		output, err := exec.Command("go", "test").Output()
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		log.Println(string(output))
-	}
-
+	runMutationTests(mutations, filesInfo)
 }
 
-func createBackup(fileName, backupFileName string) *os.File {
-	err := os.Rename(fileName, backupFileName)
-	if err != nil {
-		log.Fatal(err)
+func runMutationTests(mutations []Mutation, files []os.FileInfo) {
+	for _, m := range mutations {
+		testSucceeded, err := testWithMutation(m, files)
+		if err != nil {
+			log.Println(err)
+		}
+
+		if testSucceeded {
+			log.Printf("WARNING: Test succeeded with mutation: %v", m)
+		} else {
+			log.Printf("SUCCESS: Test failed with mutation: %v", m)
+		}
+	}
+}
+
+func testWithMutation(m Mutation, files []os.FileInfo) (bool, error) {
+	for _, fileInfo := range files {
+		createBackup(fileInfo)
+		defer restoreBackup(fileInfo)
+
+		err := applyMutation(m, fileInfo.Name())
+		if err != nil {
+			return false, fmt.Errorf("failed to apply mutation: %v", err)
+		}
 	}
 
-	f, err := os.Open(backupFileName)
+	_, err := exec.Command("go", "test", "-count=1", ".").CombinedOutput()
+
 	if err != nil {
-		log.Fatal(err)
+		// log.Printf("tests failed, which is expected with mutation %v", m)
+		return false, nil
 	}
 
-	return f
+	return true, nil
 }

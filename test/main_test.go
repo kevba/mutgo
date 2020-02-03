@@ -3,8 +3,8 @@ package main
 import "testing"
 
 func TestAdd(t *testing.T) {
-	val := add(5, -5)
-	if val != 0 {
+	val := add(2, 2)
+	if val != 4 {
 		t.Errorf("expected 0")
 	}
 }

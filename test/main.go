@@ -1,7 +1,11 @@
 package main
 
+func main() {
+
+}
+
 func add(n, n2 int) int {
-	return n - n2
+	return n + n2
 }
 
 func isEqual(n, n2 int) bool {
