@@ -29,28 +29,32 @@ var allMutations = []Mutation{
 	Mutation{token.MUL, token.SUB},
 }
 
-func applyMutation(m Mutation, srcFileName string) error {
+func applyMutation(m Mutation, srcFileName string) (changes int, err error) {
 	fset := token.NewFileSet()
 	astFile, err := parser.ParseFile(fset, srcFileName, nil, 0600)
 	if err != nil {
-		return fmt.Errorf("could not parse ast for source file %v: %v", srcFileName, err)
+		return changes, fmt.Errorf("could not parse ast for source file %v: %v", srcFileName, err)
 	}
 
-	applyMutationToAST(m, astFile)
+	changes = applyMutationToAST(m, astFile)
+	if changes == 0 {
+		//  If there are no mutations, nothing will happen, so just return right away.
+		return changes, nil
+	}
 
 	srcFile, err := os.OpenFile(srcFileName, os.O_WRONLY, 0600)
 	if err != nil {
-		return fmt.Errorf("could not open source file %v for mutating: %v", srcFileName, err)
+		return changes, fmt.Errorf("could not open source file %v for mutating: %v", srcFileName, err)
 	}
 
 	if err := printer.Fprint(srcFile, fset, astFile); err != nil {
-		return fmt.Errorf("could not mutate source file %v: %v", srcFileName, err)
+		return changes, fmt.Errorf("could not mutate source file %v: %v", srcFileName, err)
 	}
 
-	return nil
+	return changes, nil
 }
 
-func applyMutationToAST(m Mutation, astFile *ast.File) {
+func applyMutationToAST(m Mutation, astFile *ast.File) (changes int) {
 	ast.Inspect(astFile, func(x ast.Node) bool {
 		s, ok := x.(*ast.BinaryExpr)
 		if !ok {
@@ -58,8 +62,11 @@ func applyMutationToAST(m Mutation, astFile *ast.File) {
 		}
 
 		if s.Op == m.token {
+			changes++
 			s.Op = m.mutationToken
 		}
 		return false
 	})
+
+	return changes
 }

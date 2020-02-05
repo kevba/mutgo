@@ -17,12 +17,12 @@ func main() {
 
 func runMutationTests(mutations []Mutation, files []os.FileInfo) {
 	for _, m := range mutations {
-		testSucceeded, err := testWithMutation(m, files)
+		testResult, err := testWithMutation(m, files)
 		if err != nil {
 			log.Println(err)
 		}
 
-		if testSucceeded {
+		if testResult.testSucceeded {
 			log.Printf("WARNING: Test succeeded with mutation: %v", m)
 		} else {
 			log.Printf("SUCCESS: Test failed with mutation: %v", m)
@@ -30,23 +30,37 @@ func runMutationTests(mutations []Mutation, files []os.FileInfo) {
 	}
 }
 
-func testWithMutation(m Mutation, files []os.FileInfo) (bool, error) {
+func testWithMutation(m Mutation, files []os.FileInfo) (TestResult, error) {
+	var totalChanges int
+	result := TestResult{testSucceeded: false}
+
 	for _, fileInfo := range files {
 		createBackup(fileInfo)
 		defer restoreBackup(fileInfo)
 
-		err := applyMutation(m, fileInfo.Name())
+		changes, err := applyMutation(m, fileInfo.Name())
 		if err != nil {
-			return false, fmt.Errorf("failed to apply mutation: %v", err)
+			return result, fmt.Errorf("failed to apply mutation: %v", err)
 		}
+
+		totalChanges += changes
 	}
 
+	if totalChanges == 0 {
+		// The mutation had no effect, so the tests will still succeed.
+		return result, nil
+	}
 	_, err := exec.Command("go", "test", "-count=1", ".").CombinedOutput()
 
 	if err != nil {
 		// log.Printf("tests failed, which is expected with mutation %v", m)
-		return false, nil
+		return result, nil
 	}
+	result.testSucceeded = true
 
-	return true, nil
+	return result, nil
+}
+
+type TestResult struct {
+	testSucceeded bool
 }
